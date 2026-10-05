@@ -359,6 +359,11 @@ public class DisplaySdl {
                 case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                     onFramebufferResize(handle, windowEvent.data1(), windowEvent.data2());
                     break;
+                case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+                    if (borderlessFullscreen) {
+                        enterBorderlessFullscreen();
+                    }
+                    break;
                 case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
                     fullscreen = true;
                     windowResized = true;
@@ -449,15 +454,6 @@ public class DisplaySdl {
         }
 
         setFullscreen(fullscreenDeferred);
-        MainThread.run(() -> {
-            try (MemoryStack ms = stackPush()) {
-                IntBuffer width = ms.mallocInt(1);
-                IntBuffer height = ms.mallocInt(1);
-                checkSdlError(SDL_GetWindowSizeInPixels(handle, width, height));
-                framebufferWidth = Math.max(1, width.get(0));
-                framebufferHeight = Math.max(1, height.get(0));
-            }
-        });
         resizePending = true;
 
         Mouse.create();
@@ -465,6 +461,14 @@ public class DisplaySdl {
         MainThread.run(() -> {
             checkSdlError(SDL_ShowWindow(handle));
             checkSdlError(SDL_RaiseWindow(handle));
+            SDL_SyncWindow(handle);
+            try (MemoryStack ms = stackPush()) {
+                IntBuffer width = ms.mallocInt(1);
+                IntBuffer height = ms.mallocInt(1);
+                checkSdlError(SDL_GetWindowSizeInPixels(handle, width, height));
+                framebufferWidth = Math.max(1, width.get(0));
+                framebufferHeight = Math.max(1, height.get(0));
+            }
             if (SDL_IsMainThread()) {
                 SDL_PumpEvents();
             }
