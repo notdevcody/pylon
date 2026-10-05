@@ -59,6 +59,9 @@ public class DisplaySdl {
     private boolean minimized;
     private boolean fullscreen;
     private boolean fullscreenDeferred;
+    private boolean borderlessFullscreen;
+    private int windowedX;
+    private int windowedY;
     private boolean focused;
     private boolean closeRequested;
 
@@ -516,13 +519,52 @@ public class DisplaySdl {
                 height = windowedHeight;
             }
             MainThread.run(() -> {
-                SDL_SetWindowFullscreen(handle, fullscreen);
-                SDL_SetWindowSize(handle, windowedWidth, windowedHeight);
+                if (!fullscreen || !enterBorderlessFullscreen()) {
+                    leaveBorderlessFullscreen();
+                    SDL_SetWindowFullscreen(handle, fullscreen);
+                    SDL_SetWindowSize(handle, windowedWidth, windowedHeight);
+                }
             });
             windowResized = true;
             resizePending = true;
         } catch (Throwable t) {
             Pylon.LOG.log(Level.WARNING, "Failed to set fullscreen: ", t);
+        }
+    }
+
+    private boolean enterBorderlessFullscreen() {
+        if (!"Windows".equals(SDLPlatform.SDL_GetPlatform())) {
+            return false;
+        }
+        try (MemoryStack ms = stackPush()) {
+            SDL_Rect bounds = SDL_Rect.malloc(ms);
+            if (!SDL_GetDisplayBounds(currentDisplay(), bounds)) {
+                return false;
+            }
+            if (!borderlessFullscreen) {
+                IntBuffer x = ms.mallocInt(1);
+                IntBuffer y = ms.mallocInt(1);
+                SDL_RestoreWindow(handle);
+                SDL_SyncWindow(handle);
+                SDL_GetWindowPosition(handle, x, y);
+                windowedX = x.get(0);
+                windowedY = y.get(0);
+            }
+            SDL_SetWindowBordered(handle, false);
+            SDL_SetWindowSize(handle, bounds.w() + 1, bounds.h());
+            SDL_SetWindowPosition(handle, bounds.x(), bounds.y());
+        }
+        borderlessFullscreen = true;
+        fullscreen = true;
+        return true;
+    }
+
+    private void leaveBorderlessFullscreen() {
+        if (borderlessFullscreen) {
+            borderlessFullscreen = false;
+            fullscreen = false;
+            SDL_SetWindowBordered(handle, true);
+            SDL_SetWindowPosition(handle, windowedX, windowedY);
         }
     }
 
