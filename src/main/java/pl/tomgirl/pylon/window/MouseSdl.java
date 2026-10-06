@@ -210,8 +210,8 @@ public class MouseSdl {
             case SDL_EVENT_MOUSE_MOTION: {
                 double x = toLwjglX(motionEvent.x());
                 double y = toLwjglY(motionEvent.y());
-                double dx = motionEvent.xrel() * scaleX();
-                double dy = -motionEvent.yrel() * scaleY();
+                double dx = motionEvent.xrel() * (grabbed ? 1 : scaleX());
+                double dy = -motionEvent.yrel() * (grabbed ? 1 : scaleY());
                 if (dx != 0 || dy != 0) {
                     accumDx += dx;
                     accumDy += dy;
