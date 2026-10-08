@@ -11,6 +11,7 @@ import org.lwjgl.opengl.DisplayMode;
 import org.lwjgl.opengl.Drawable;
 import pl.tomgirl.pylon.Pylon;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.lwjgl.LWJGLException;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.input.Keyboard;
@@ -60,6 +61,8 @@ public class DisplaySdl {
     private boolean fullscreen;
     private boolean fullscreenDeferred;
     private boolean borderlessFullscreen;
+    private boolean exclusiveFullscreen;
+    private DisplayMode fullscreenDisplayMode;
     private int windowedX;
     private int windowedY;
     private boolean focused;
@@ -175,13 +178,20 @@ public class DisplaySdl {
     public DisplayMode getDisplayMode() {
         if (!isCreated() && fullscreenDeferred) {
             initializeVideo();
-            SDL_DisplayMode mode = SDL_GetDesktopDisplayMode(currentDisplay());
-            if (mode != null) {
-                float density = highPixelDensity ? mode.pixel_density() : 1f;
-                return new DisplayMode(Math.round(mode.w() * density), Math.round(mode.h() * density), 24, 60);
+            try (MemoryStack ms = stackPush()) {
+                SDL_DisplayMode mode = exclusiveFullscreen ? exclusiveDisplayMode(ms) : SDL_GetDesktopDisplayMode(currentDisplay());
+                if (mode != null) {
+                    float density = highPixelDensity ? mode.pixel_density() : 1f;
+                    return new DisplayMode(Math.round(mode.w() * density), Math.round(mode.h() * density), 24, refreshRate(mode));
+                }
             }
         }
-        return new DisplayMode(framebufferWidth, framebufferHeight, 24, 60);
+        return new DisplayMode(framebufferWidth, framebufferHeight, 24, refreshRate(isCreated() ? SDL_GetCurrentDisplayMode(currentDisplay()) : null));
+    }
+
+    private static int refreshRate(@Nullable SDL_DisplayMode mode) {
+        int refreshRate = mode != null ? Math.round(mode.refresh_rate()) : 0;
+        return refreshRate > 0 ? refreshRate : 60;
     }
 
     public void setDisplayMode(@NotNull DisplayMode mode) {
@@ -224,6 +234,23 @@ public class DisplaySdl {
 
     public boolean isHighPixelDensity() {
         return highPixelDensity;
+    }
+
+    public void setExclusiveFullscreen(boolean exclusiveFullscreen) {
+        this.exclusiveFullscreen = exclusiveFullscreen;
+    }
+
+    public boolean isExclusiveFullscreen() {
+        return exclusiveFullscreen;
+    }
+
+    public void setFullscreenDisplayMode(@Nullable DisplayMode mode) {
+        this.fullscreenDisplayMode = mode;
+    }
+
+    @Nullable
+    public DisplayMode getFullscreenDisplayMode() {
+        return fullscreenDisplayMode;
     }
 
     /// Sets [SDLHints] for window creation.
@@ -369,7 +396,7 @@ public class DisplaySdl {
                     windowResized = true;
                     break;
                 case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
-                    fullscreen = false;
+                    fullscreen = borderlessFullscreen;
                     windowResized = true;
                     break;
                 case SDL_EVENT_KEY_DOWN:
@@ -524,8 +551,15 @@ public class DisplaySdl {
                 height = windowedHeight;
             }
             MainThread.run(() -> {
-                if (!fullscreen || !enterBorderlessFullscreen()) {
+                if (!fullscreen || exclusiveFullscreen || !enterBorderlessFullscreen()) {
                     leaveBorderlessFullscreen();
+                    if (fullscreen) {
+                        try (MemoryStack ms = stackPush()) {
+                            if (!SDL_SetWindowFullscreenMode(handle, exclusiveFullscreen ? exclusiveDisplayMode(ms) : null)) {
+                                Pylon.LOG.log(Level.WARNING, "Failed to set fullscreen display mode: " + SDL_GetError());
+                            }
+                        }
+                    }
                     SDL_SetWindowFullscreen(handle, fullscreen);
                     SDL_SetWindowSize(handle, windowedWidth, windowedHeight);
                 }
@@ -542,6 +576,10 @@ public class DisplaySdl {
             return false;
         }
         try (MemoryStack ms = stackPush()) {
+            if (!borderlessFullscreen && (SDL_GetWindowFlags(handle) & SDL_WINDOW_FULLSCREEN) != 0) {
+                SDL_SetWindowFullscreen(handle, false);
+                SDL_SyncWindow(handle);
+            }
             SDL_Rect bounds = SDL_Rect.malloc(ms);
             if (!SDL_GetDisplayBounds(currentDisplay(), bounds)) {
                 return false;
@@ -564,12 +602,49 @@ public class DisplaySdl {
         return true;
     }
 
+    private SDL_DisplayMode exclusiveDisplayMode(MemoryStack ms) {
+        int display = currentDisplay();
+        DisplayMode mode = fullscreenDisplayMode;
+        if (mode != null) {
+            SDL_DisplayMode closest = SDL_DisplayMode.malloc(ms);
+            if (SDL_GetClosestFullscreenDisplayMode(display, mode.getWidth(), mode.getHeight(), Math.max(0, mode.getFrequency()), highPixelDensity, closest)) {
+                if (highPixelDensity) {
+                    preferHighestDensity(display, closest);
+                }
+                return closest;
+            }
+            if (isCreated()) {
+                Pylon.LOG.log(Level.WARNING, "No fullscreen display mode matching " + mode + ", using desktop mode");
+            }
+        }
+        return SDL_GetDesktopDisplayMode(display);
+    }
+
+    private static void preferHighestDensity(int display, SDL_DisplayMode match) {
+        PointerBuffer modes = SDL_GetFullscreenDisplayModes(display);
+        if (modes == null) {
+            return;
+        }
+        int w = match.w(), h = match.h();
+        float refreshRate = match.refresh_rate();
+        for (int i = 0; i < modes.limit(); i++) {
+            SDL_DisplayMode mode = SDL_DisplayMode.create(modes.get(i));
+            if (mode.w() == w && mode.h() == h && mode.refresh_rate() == refreshRate && mode.pixel_density() > match.pixel_density()) {
+                match.set(mode);
+            }
+        }
+        SDLStdinc.SDL_free(modes);
+    }
+
     private void leaveBorderlessFullscreen() {
         if (borderlessFullscreen) {
             borderlessFullscreen = false;
             fullscreen = false;
             SDL_SetWindowBordered(handle, true);
+            SDL_SetWindowSize(handle, windowedWidth, windowedHeight);
             SDL_SetWindowPosition(handle, windowedX, windowedY);
+            // so currentDisplay() sees the restored bounds
+            SDL_SyncWindow(handle);
         }
     }
 
@@ -596,9 +671,10 @@ public class DisplaySdl {
             modes[i] = new DisplayMode(
                 SDL_DisplayMode.nw(mode), SDL_DisplayMode.nh(mode),
                 SDL_PixelFormatDetails.nbits_per_pixel(SDLPixels.nSDL_GetPixelFormatDetails(SDL_DisplayMode.nformat(mode))),
-                (int) SDL_DisplayMode.nrefresh_rate(mode)
+                Math.round(SDL_DisplayMode.nrefresh_rate(mode))
             );
         }
+        SDLStdinc.SDL_free(buf);
         return modes;
     }
 
