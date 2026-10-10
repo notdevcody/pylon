@@ -9,7 +9,10 @@ import pl.tomgirl.pylon.game.patch.Patch;
 
 public final class ScreenPatch extends Patch {
     private static final String CLIPBOARD = "java/awt/datatransfer/Clipboard";
+    private static final String AWT_DESKTOP = "java.awt.Desktop";
+    private static final String DESKTOP = "pl.tomgirl.pylon.game.Desktop";
     private final Map<Method, ScreenMethod> methods = new HashMap<>();
+    private boolean inlineDesktop;
 
     public ScreenPatch(ClassVisitor next) { super(next); }
 
@@ -32,7 +35,7 @@ public final class ScreenPatch extends Patch {
 
             @Override
             public void visitLdcInsn(Object value) {
-                desktop |= "java.awt.Desktop".equals(value);
+                desktop |= AWT_DESKTOP.equals(value);
                 super.visitLdcInsn(value);
             }
 
@@ -40,7 +43,10 @@ public final class ScreenPatch extends Patch {
             public void visitEnd() {
                 if (gets && descriptor.equals("()Ljava/lang/String;")) methods.put(new Method(name, descriptor), ScreenMethod.GET_CLIPBOARD);
                 if (sets && descriptor.equals("(Ljava/lang/String;)V")) methods.put(new Method(name, descriptor), ScreenMethod.SET_CLIPBOARD);
-                if (desktop && descriptor.equals("(Ljava/net/URI;)V")) methods.put(new Method(name, descriptor), ScreenMethod.OPEN_LINK);
+                if (desktop) {
+                    if (descriptor.equals("(Ljava/net/URI;)V")) methods.put(new Method(name, descriptor), ScreenMethod.OPEN_LINK);
+                    else inlineDesktop = true;
+                }
                 super.visitEnd();
             }
         };
@@ -48,7 +54,7 @@ public final class ScreenPatch extends Patch {
 
     @Override
     public boolean matches() {
-        return !methods.isEmpty();
+        return !methods.isEmpty() || inlineDesktop;
     }
 
     @Override
@@ -57,7 +63,14 @@ public final class ScreenPatch extends Patch {
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
                 ScreenMethod patch = methods.get(new Method(name, descriptor));
-                if (patch == null) return super.visitMethod(access, name, descriptor, signature, exceptions);
+                if (patch == null) {
+                    return new MethodVisitor(Opcodes.ASM9, super.visitMethod(access, name, descriptor, signature, exceptions)) {
+                        @Override
+                        public void visitLdcInsn(Object value) {
+                            super.visitLdcInsn(AWT_DESKTOP.equals(value) ? DESKTOP : value);
+                        }
+                    };
+                }
                 MethodVisitor method = super.visitMethod(access, name, descriptor, signature, exceptions);
                 int argumentSlot = (access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
                 method.visitCode();

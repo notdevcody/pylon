@@ -65,8 +65,12 @@ public class DisplaySdl {
     private boolean focused;
     private boolean closeRequested;
 
+    private static final long TEXT_INPUT_DEFER_NANOS = 250_000_000L;
+
     private boolean textInputRequested = true;
     private boolean textInputActive;
+    private boolean textInputDeferrable;
+    private long textInputRequestNanos;
     private int textInputX = -1;
     private int textInputY;
     private int textInputWidth;
@@ -110,6 +114,9 @@ public class DisplaySdl {
             MainThread.run(() -> checkSdlError(SDLKeyboard.SDL_ClearComposition(handle)));
         }
         textInputX = -1;
+        if (active && !textInputRequested) {
+            textInputRequestNanos = System.nanoTime();
+        }
         textInputRequested = active;
         updateTextInputState();
     }
@@ -147,6 +154,11 @@ public class DisplaySdl {
         if (handle <= 0 || textInputActive == textInputRequested) {
             return;
         }
+        if (isTextInputDeferred() && KeyboardSdl.instance().isAnyKeyDown()
+            && System.nanoTime() - textInputRequestNanos < TEXT_INPUT_DEFER_NANOS
+        ) {
+            return;
+        }
 
         MainThread.run(() -> {
             if (textInputRequested) {
@@ -157,6 +169,10 @@ public class DisplaySdl {
         });
         textInputActive = textInputRequested;
         textInputX = -1;
+    }
+
+    boolean isTextInputDeferred() {
+        return textInputDeferrable && textInputRequested && !textInputActive;
     }
 
     @NotNull
@@ -343,6 +359,7 @@ public class DisplaySdl {
         windowResized = resizePending;
         resizePending = false;
         MainThread.run(this::pollEvents);
+        updateTextInputState();
         Keyboard.poll();
         Mouse.poll();
     }
@@ -450,6 +467,7 @@ public class DisplaySdl {
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             throw new IllegalStateException("Unable to initialize SDL: " + SDL_GetError());
         }
+        textInputDeferrable = "wayland".equals(SDL_GetCurrentVideoDriver());
     }
 
     public void create(@NotNull GpuSurface fallbackSurface) throws LWJGLException {

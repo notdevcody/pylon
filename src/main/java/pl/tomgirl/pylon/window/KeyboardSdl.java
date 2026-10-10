@@ -53,6 +53,15 @@ public class KeyboardSdl {
         }
     }
 
+    boolean isAnyKeyDown() {
+        for (byte state : keyDownBuffer) {
+            if (state != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void reset() {
         Arrays.fill(keyDownBuffer, (byte) 0);
         events.clear();
@@ -92,7 +101,7 @@ public class KeyboardSdl {
                 if (key != Keyboard.KEY_NONE) {
                     this.keyDownBuffer[key] = state;
                 }
-                putKeyboardEvent(key, state, 0, keyboardEvent.timestamp(), keyboardEvent.repeat());
+                putKeyboardEvent(key, state, deferredCharacter(state), keyboardEvent.timestamp(), keyboardEvent.repeat());
                 break;
             }
             case SDL_EVENT_TEXT_INPUT: {
@@ -104,6 +113,16 @@ public class KeyboardSdl {
                 break;
             }
         }
+    }
+
+    private int deferredCharacter(byte state) {
+        if (state == 0 || !DisplaySdl.instance().isTextInputDeferred()
+            || (keyboardEvent.mod() & (SDLKeycode.SDL_KMOD_CTRL | SDLKeycode.SDL_KMOD_ALT | SDLKeycode.SDL_KMOD_GUI)) != 0
+        ) {
+            return 0;
+        }
+        int character = SDLKeyboard.SDL_GetKeyFromScancode(keyboardEvent.scancode(), keyboardEvent.mod(), false);
+        return character >= ' ' && character != 0x7F && Character.isValidCodePoint(character) ? character : 0;
     }
 
     private int translateKeyFromSDL(int key) {
