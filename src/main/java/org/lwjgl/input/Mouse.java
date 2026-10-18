@@ -38,6 +38,7 @@ public class Mouse {
     private static double eventDx;
     private static double eventDy;
     private static double eventWheelDelta;
+    private static double eventWheelDeltaPrecise;
     private static double lastRawEventX;
     private static double lastRawEventY;
     private static long eventNanos;
@@ -195,6 +196,7 @@ public class Mouse {
             eventY = clamp(eventY, Display.getHeight());
         }
         eventWheelDelta = event.wheelDelta;
+        eventWheelDeltaPrecise = event.wheelDeltaPrecise;
         eventNanos = event.nanos;
         return true;
     }
@@ -225,6 +227,10 @@ public class Mouse {
 
     public static int getEventDWheel() {
         return (int) eventWheelDelta * LWJGL2_WHEEL_STEP;
+    }
+
+    public static double getEventDWheelPrecise() {
+        return eventWheelDeltaPrecise;
     }
 
     public static long getEventNanoseconds() {
