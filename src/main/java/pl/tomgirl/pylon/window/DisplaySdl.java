@@ -317,7 +317,6 @@ public class DisplaySdl {
                 size = currentSize;
             }
         }
-
         ByteBuffer pixels = MemoryUtil.memAlloc(icon.remaining());
         try {
             pixels.put(icon.duplicate()).flip();
@@ -327,7 +326,11 @@ public class DisplaySdl {
                     iconSize, iconSize, SDLPixels.SDL_PIXELFORMAT_RGBA32, pixels, iconSize * 4
                 )) {
                     checkSdlError(surface != null);
-                    checkSdlError(SDL_SetWindowIcon(handle, surface));
+                    boolean notWayland = SDL_GetCurrentVideoDriver() != "wayland"; // Prevent error from being overridden I think?
+                    // Hacky fix to prevent crashes from wayland compositors that don't support xdg_toplevel_icon_v1
+                    if(!SDL_SetWindowIcon(handle, surface) && notWayland){ 
+                       checkSdlError(true);
+                    }
                 } catch (Exception e) {
                     Pylon.LOG.log(Level.SEVERE, "Failed to set window icon", e);
                 }
