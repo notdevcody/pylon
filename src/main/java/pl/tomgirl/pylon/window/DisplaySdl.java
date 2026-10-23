@@ -63,6 +63,7 @@ public class DisplaySdl {
     private boolean fullscreen;
     private boolean fullscreenDeferred;
     private boolean exclusiveFullscreen;
+    private boolean rawInput = Boolean.parseBoolean(System.getProperty("pylon.rawInput", "true"));
     private DisplayMode fullscreenDisplayMode;
     private boolean focused;
     private boolean closeRequested;
@@ -257,6 +258,21 @@ public class DisplaySdl {
 
     public boolean isExclusiveFullscreen() {
         return exclusiveFullscreen;
+    }
+
+    public void setRawInput(boolean rawInput) {
+        this.rawInput = rawInput;
+        if (videoInitialized) {
+            MainThread.run(this::applyRawInput);
+        }
+    }
+
+    public boolean isRawInput() {
+        return rawInput;
+    }
+
+    private void applyRawInput() {
+        checkSdlError(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, rawInput ? "0" : "1"));
     }
 
     public void setFullscreenDisplayMode(@Nullable DisplayMode mode) {
@@ -462,6 +478,7 @@ public class DisplaySdl {
 
         checkSdlError(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MAC_BACKGROUND_APP, "0"));
         checkSdlError(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1"));
+        applyRawInput();
         hints.forEach((k, v) -> checkSdlError(SDLHints.SDL_SetHint(k, v)));
 
         checkSdlError(SDL_SetAppMetadata("Minecraft", null, "com.mojang.minecraft"));
