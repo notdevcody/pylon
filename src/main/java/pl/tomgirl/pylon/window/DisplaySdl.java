@@ -63,7 +63,7 @@ public class DisplaySdl {
     private boolean fullscreen;
     private boolean fullscreenDeferred;
     private boolean exclusiveFullscreen;
-    private boolean rawInput = !Boolean.getBoolean("pylon.disableRawInput");
+    private boolean rawInput = !Boolean.getBoolean("pylon.rawInput.disable");
     private DisplayMode fullscreenDisplayMode;
     private boolean focused;
     private boolean closeRequested;
