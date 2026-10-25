@@ -1,5 +1,6 @@
 package org.lwjgl;
 
+import org.lwjgl.system.Pointer;
 import pl.tomgirl.pylon.Platform;
 
 @SuppressWarnings("unused")
@@ -23,6 +24,10 @@ public class Sys {
     }
 
     public static void initialize() {
+    }
+
+    public static boolean is64Bit() {
+        return Pointer.BITS64;
     }
 
     public static boolean openURL(String url) {
