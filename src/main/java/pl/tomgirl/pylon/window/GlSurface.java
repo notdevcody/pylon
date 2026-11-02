@@ -1,7 +1,5 @@
 package pl.tomgirl.pylon.window;
 
-import java.nio.ByteBuffer;
-
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GLCapabilities;
@@ -21,6 +19,7 @@ public class GlSurface implements GpuSurface {
     private long window;
     private long context;
     private boolean glInitialized;
+    private boolean glLibraryLoaded;
     private GLCapabilities capabilities;
 
     public GlSurface(PixelFormat pixelFormat) {
@@ -33,11 +32,9 @@ public class GlSurface implements GpuSurface {
             throw new IllegalStateException("Surface has already been created");
         }
 
-        MainThread.run(() -> createSdlWindow(title, width, height, resizable));
-
         try {
+            MainThread.run(() -> createSdlWindow(title, width, height, resizable));
             context = check(SDL_GL_CreateContext(window));
-            check(SDL_GL_LoadLibrary((ByteBuffer) null));
             Configuration.OPENGL_EXPLICIT_INIT.set(true);
             GL.create(SDLVideo::SDL_GL_GetProcAddress);
             glInitialized = true;
@@ -50,6 +47,11 @@ public class GlSurface implements GpuSurface {
     }
 
     private void createSdlWindow(String title, int width, int height, boolean resizable) {
+        String libraryName = Configuration.OPENGL_LIBRARY_NAME.get();
+        if (libraryName != null) {
+            check(SDL_GL_LoadLibrary(libraryName));
+            glLibraryLoaded = true;
+        }
         int properties = (int) check(SDL_CreateProperties());
         try {
             check(SDL_SetNumberProperty(properties, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED));
@@ -130,6 +132,10 @@ public class GlSurface implements GpuSurface {
         if (window != 0) {
             MainThread.run(() -> SDL_DestroyWindow(window));
             window = 0;
+        }
+        if (glLibraryLoaded) {
+            MainThread.run(SDLVideo::SDL_GL_UnloadLibrary);
+            glLibraryLoaded = false;
         }
     }
 
