@@ -78,7 +78,7 @@ class PylonBuildPlugin : Plugin<Project> {
             add(fabric.compileOnlyConfigurationName, libs.findLibrary("fabric-mixin").get())
 
             for (module in listOf("lwjgl", "lwjgl-openal", "lwjgl-opengl", "lwjgl-sdl")) {
-                for (platform in listOf("windows", "linux", "macos", "macos-arm64")) {
+                for (platform in listOf("windows", "windows-arm64", "linux", "macos", "macos-arm64")) {
                     add("runtimeOnly", "org.lwjgl:$module:$lwjglVersion:natives-$platform")
                 }
             }
