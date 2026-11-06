@@ -2,6 +2,7 @@ package pl.tomgirl.pylon.window;
 
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.opengl.PixelFormat;
 import org.lwjgl.sdl.SDLPlatform;
@@ -15,6 +16,8 @@ import static org.lwjgl.sdl.SDLVideo.*;
 import static org.lwjgl.system.MemoryUtil.memFree;
 
 public class GlSurface implements GpuSurface {
+    private static final float[] OPAQUE = {0f, 0f, 0f, 1f};
+
     private final PixelFormat pixelFormat;
     private long window;
     private long context;
@@ -104,7 +107,18 @@ public class GlSurface implements GpuSurface {
 
     @Override
     public void swapBuffers() {
+        if (pixelFormat.getAlphaBits() == 0 && capabilities != null && capabilities.OpenGL30) {
+            fillAlpha();
+        }
         check(SDL_GL_SwapWindow(window));
+    }
+
+    private void fillAlpha() {
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL11.glColorMask(false, false, false, true);
+        GL30.glClearBufferfv(GL11.GL_COLOR, 0, OPAQUE);
+        GL11.glColorMask(true, true, true, true);
     }
 
     @Override
