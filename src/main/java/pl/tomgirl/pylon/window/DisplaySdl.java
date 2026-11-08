@@ -114,7 +114,7 @@ public class DisplaySdl {
 
     public void setTextInputActive(boolean active) {
         if (handle > 0 && textInputActive) {
-            MainThread.run(() -> checkSdlError(SDLKeyboard.SDL_ClearComposition(handle)));
+            MainThread.run(() -> check(SDLKeyboard.SDL_ClearComposition(handle)));
         }
         textInputX = -1;
         if (active && !textInputRequested) {
@@ -143,7 +143,7 @@ public class DisplaySdl {
             try (MemoryStack stack = stackPush()) {
                 SDL_Rect.Buffer area = SDL_Rect.calloc(1, stack)
                     .x(areaX).y(areaY).w(areaWidth).h(areaHeight);
-                checkSdlError(SDLKeyboard.SDL_SetTextInputArea(handle, area, areaCursor));
+                check(SDLKeyboard.SDL_SetTextInputArea(handle, area, areaCursor));
             }
         });
         textInputX = areaX;
@@ -165,7 +165,7 @@ public class DisplaySdl {
 
         MainThread.run(() -> {
             if (textInputRequested) {
-                checkSdlError(SDLKeyboard.SDL_StartTextInput(handle));
+                check(SDLKeyboard.SDL_StartTextInput(handle));
             } else {
                 SDLKeyboard.SDL_StopTextInput(handle);
             }
@@ -220,6 +220,27 @@ public class DisplaySdl {
         resizePending = true;
     }
 
+    public int getX() {
+        return getPosition(true);
+    }
+
+    public int getY() {
+        return getPosition(false);
+    }
+
+    private int getPosition(boolean x) {
+        if (fullscreen || !isCreated()) {
+            return 0;
+        }
+        return MainThread.call(() -> {
+            try (MemoryStack ms = stackPush()) {
+                IntBuffer buf = ms.mallocInt(1);
+                check(SDL_GetWindowPosition(handle, x ? buf : null, x ? null : buf));
+                return buf.get(0);
+            }
+        });
+    }
+
     public int getWidth() {
         return framebufferWidth;
     }
@@ -265,7 +286,7 @@ public class DisplaySdl {
         String value = rawInput ? "0" : "1";
         hints.put(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value);
         if (videoInitialized) {
-            MainThread.run(() -> checkSdlError(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value)));
+            MainThread.run(() -> check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value)));
         }
     }
 
@@ -341,8 +362,8 @@ public class DisplaySdl {
                 try (SDL_Surface surface = SDLSurface.SDL_CreateSurfaceFrom(
                     iconSize, iconSize, SDLPixels.SDL_PIXELFORMAT_RGBA32, pixels, iconSize * 4
                 )) {
-                    checkSdlError(surface != null);
-                    checkSdlError(SDL_SetWindowIcon(handle, surface));
+                    check(surface != null);
+                    check(SDL_SetWindowIcon(handle, surface));
                 } catch (Exception e) {
                     Pylon.LOG.log(Level.SEVERE, "Failed to set window icon", e);
                 }
@@ -451,7 +472,7 @@ public class DisplaySdl {
         }
     }
 
-    private static void checkSdlError(boolean success) {
+    private static void check(boolean success) {
         if (!success) {
             throw new IllegalStateException("SDL error encountered: " + SDL_GetError());
         }
@@ -474,16 +495,16 @@ public class DisplaySdl {
             MemoryUtil::nmemFree
         );
 
-        checkSdlError(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MAC_BACKGROUND_APP, "0"));
-        checkSdlError(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1"));
+        check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MAC_BACKGROUND_APP, "0"));
+        check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1"));
         hints.putIfAbsent(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, rawInput ? "0" : "1");
-        hints.forEach((k, v) -> checkSdlError(SDLHints.SDL_SetHint(k, v)));
+        hints.forEach((k, v) -> check(SDLHints.SDL_SetHint(k, v)));
 
-        checkSdlError(SDL_SetAppMetadata("Minecraft", null, "com.mojang.minecraft"));
-        checkSdlError(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://minecraft.net"));
-        checkSdlError(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Mojang AB"));
-        checkSdlError(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "Minecraft EULA: https://minecraft.net/eula"));
-        checkSdlError(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game"));
+        check(SDL_SetAppMetadata("Minecraft", null, "com.mojang.minecraft"));
+        check(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://minecraft.net"));
+        check(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Mojang AB"));
+        check(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "Minecraft EULA: https://minecraft.net/eula"));
+        check(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game"));
 
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             throw new IllegalStateException("Unable to initialize SDL: " + SDL_GetError());
@@ -516,7 +537,7 @@ public class DisplaySdl {
             try (MemoryStack ms = stackPush()) {
                 IntBuffer width = ms.mallocInt(1);
                 IntBuffer height = ms.mallocInt(1);
-                checkSdlError(SDL_GetWindowSizeInPixels(handle, width, height));
+                check(SDL_GetWindowSizeInPixels(handle, width, height));
                 framebufferWidth = Math.max(1, width.get(0));
                 framebufferHeight = Math.max(1, height.get(0));
             }
@@ -529,8 +550,8 @@ public class DisplaySdl {
             if (Platform.CURRENT == Platform.MACOS) {
                 AppKitEvents.install();
             }
-            checkSdlError(SDL_ShowWindow(handle));
-            checkSdlError(SDL_RaiseWindow(handle));
+            check(SDL_ShowWindow(handle));
+            check(SDL_RaiseWindow(handle));
             if (SDL_IsMainThread()) {
                 SDL_PumpEvents();
             }
@@ -617,9 +638,9 @@ public class DisplaySdl {
                 try (MemoryStack ms = stackPush()) {
                     IntBuffer width = ms.mallocInt(1);
                     IntBuffer height = ms.mallocInt(1);
-                    checkSdlError(SDL_GetWindowSize(handle, width, height));
+                    check(SDL_GetWindowSize(handle, width, height));
                     resizeCallback(handle, width.get(0), height.get(0));
-                    checkSdlError(SDL_GetWindowSizeInPixels(handle, width, height));
+                    check(SDL_GetWindowSizeInPixels(handle, width, height));
                     onFramebufferResize(handle, width.get(0), height.get(0));
                 }
             });
@@ -766,7 +787,7 @@ public class DisplaySdl {
 
     public void setLocation(int x, int y) {
         if (isCreated()) {
-            MainThread.run(() -> checkSdlError(SDL_SetWindowPosition(handle, x, y)));
+            MainThread.run(() -> check(SDL_SetWindowPosition(handle, x, y)));
         }
     }
 

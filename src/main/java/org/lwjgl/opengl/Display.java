@@ -32,6 +32,14 @@ public class Display {
         SDL.setDisplayMode(mode);
     }
 
+    public static int getX() {
+        return SDL.getX();
+    }
+
+    public static int getY() {
+        return SDL.getY();
+    }
+
     public static int getWidth() {
         return SDL.getWidth();
     }
