@@ -24,6 +24,7 @@ public class GlSurface implements GpuSurface {
     private boolean glInitialized;
     private boolean glLibraryLoaded;
     private GLCapabilities capabilities;
+    private boolean forceOpaqueAlpha;
 
     public GlSurface(PixelFormat pixelFormat) {
         this.pixelFormat = pixelFormat;
@@ -42,6 +43,9 @@ public class GlSurface implements GpuSurface {
             GL.create(SDLVideo::SDL_GL_GetProcAddress);
             glInitialized = true;
             capabilities = GL.createCapabilities(MemoryUtil::memCallocPointer);
+            forceOpaqueAlpha = pixelFormat.getAlphaBits() == 0
+                && capabilities.OpenGL30
+                && "Windows".equals(SDLPlatform.SDL_GetPlatform());
             return window;
         } catch (RuntimeException | Error throwable) {
             destroy();
@@ -107,7 +111,7 @@ public class GlSurface implements GpuSurface {
 
     @Override
     public void swapBuffers() {
-        if (pixelFormat.getAlphaBits() == 0 && capabilities != null && capabilities.OpenGL30) {
+        if (forceOpaqueAlpha) {
             fillAlpha();
         }
         check(SDL_GL_SwapWindow(window));
@@ -134,6 +138,7 @@ public class GlSurface implements GpuSurface {
             memFree(capabilities.getAddressBuffer());
             GL.setCapabilities(null);
             capabilities = null;
+            forceOpaqueAlpha = false;
         }
         if (glInitialized) {
             GL.destroy();
