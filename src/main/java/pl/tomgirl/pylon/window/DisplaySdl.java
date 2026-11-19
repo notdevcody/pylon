@@ -54,6 +54,7 @@ public class DisplaySdl {
     private int framebufferHeight = 480;
     private int windowedWidth;
     private int windowedHeight;
+    private boolean windowedSizeKnown;
     private int windowedX;
     private int windowedY;
     private boolean windowedMaximized;
@@ -221,8 +222,12 @@ public class DisplaySdl {
     }
 
     public void setDisplayMode(@NotNull DisplayMode mode) {
-        width = windowedWidth = mode.getWidth();
-        height = windowedHeight = mode.getHeight();
+        width = mode.getWidth();
+        height = mode.getHeight();
+        if (!fullscreen || !windowedSizeKnown) {
+            windowedWidth = width;
+            windowedHeight = height;
+        }
         float density = isCreated() ? getPixelDensity() : 1f;
         framebufferWidth = Math.round(width * density);
         framebufferHeight = Math.round(height * density);
@@ -507,6 +512,7 @@ public class DisplaySdl {
         this.surface = surface;
         windowedWidth = width;
         windowedHeight = height;
+        windowedSizeKnown = false;
         fullscreen = false;
         borderless = false;
         restoreWindowedPosition = false;
@@ -599,6 +605,11 @@ public class DisplaySdl {
                             if (SDL_GetWindowPosition(handle, x, y)) {
                                 windowedX = x.get(0);
                                 windowedY = y.get(0);
+                            }
+                            if ((SDL_GetWindowFlags(handle) & SDL_WINDOW_HIDDEN) == 0 && SDL_GetWindowSize(handle, x, y)) {
+                                windowedWidth = x.get(0);
+                                windowedHeight = y.get(0);
+                                windowedSizeKnown = true;
                             }
                         }
                         windowedMaximized = (SDL_GetWindowFlags(handle) & SDL_WINDOW_MAXIMIZED) != 0;
