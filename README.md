@@ -39,6 +39,15 @@ Pylon can also be put in place of LWJGL2 directly, but game patches won't be ava
 - Dark mode for the window title bar
 - Better fullscreen and window resizing
 
+## Settings
+Settings are set via JVM arguments (`-Dpylon.property=value`).
+
+| Property           | Values| Default   |
+|--------------------|---------------------------------------|--------------|
+| `pylon.fullscreen` | `borderless`, `overhang`, `exclusive` | `borderless`|
+| `pylon.rawInput`   | `true`, `false`                    | `true`    |
+| `pylon.highDpi`    | `true`, `false`                    | `false`   |
+
 ## Developers
 Pylon is published to the Clover Client Maven, and can be added as a dependency like so:
 ```kts

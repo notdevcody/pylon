@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Level;
 
@@ -40,9 +41,7 @@ public class DisplaySdl {
     private SDL_Event event;
     private SDL_WindowEvent windowEvent;
     private final Drawable drawable = new SurfaceDrawable();
-
     private final Map<String, String> hints = new HashMap<>();
-    private boolean highPixelDensity = false;
 
     private long handle = -1L;
     private GpuSurface surface;
@@ -69,18 +68,12 @@ public class DisplaySdl {
     private boolean minimized;
     private boolean fullscreen;
     private boolean fullscreenDeferred;
-    private boolean exclusiveFullscreen;
-    private boolean overhangingBorderless;
     private boolean borderless;
     private boolean refitBorderless;
     private int paddingRight;
     private int paddingTop;
-    private boolean rawInput = !Boolean.getBoolean("pylon.rawInput.disable");
-    private DisplayMode fullscreenDisplayMode;
     private boolean focused;
     private boolean closeRequested;
-
-    private static final long TEXT_INPUT_DEFER_NANOS = 250_000_000L;
 
     private boolean textInputRequested = true;
     private boolean textInputActive;
@@ -169,8 +162,9 @@ public class DisplaySdl {
         if (handle <= 0 || textInputActive == textInputRequested) {
             return;
         }
+
         if (isTextInputDeferred() && KeyboardSdl.instance().isAnyKeyDown()
-            && System.nanoTime() - textInputRequestNanos < TEXT_INPUT_DEFER_NANOS
+            && System.nanoTime() - textInputRequestNanos < 250_000_000L
         ) {
             return;
         }
@@ -207,7 +201,11 @@ public class DisplaySdl {
         if (!isCreated() && fullscreenDeferred) {
             initializeVideo();
             try (MemoryStack ms = stackPush()) {
-                SDL_DisplayMode mode = exclusiveFullscreen ? exclusiveDisplayMode(ms) : SDL_GetDesktopDisplayMode(currentDisplay());
+                SDL_DisplayMode mode =
+                    isExclusiveFullscreen()
+                        ? exclusiveDisplayMode(ms)
+                        : SDL_GetDesktopDisplayMode(currentDisplay());
+
                 if (mode != null) {
                     float density = highPixelDensity ? mode.pixel_density() : 1f;
                     return new DisplayMode(Math.round(mode.w() * density), Math.round(mode.h() * density), 24, refreshRate(mode));
@@ -271,56 +269,6 @@ public class DisplaySdl {
 
     public float getPixelDensity() {
         return SDL_GetWindowPixelDensity(handle);
-    }
-
-    /// Sets [SDLVideo#SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN] for window creation.
-    public void setHighPixelDensity(boolean highPixelDensity) {
-        if (isCreated()) {
-            throw new IllegalStateException("Window properties cannot be set after Display is created");
-        }
-        this.highPixelDensity = highPixelDensity;
-    }
-
-    public boolean isHighPixelDensity() {
-        return highPixelDensity;
-    }
-
-    public void setExclusiveFullscreen(boolean exclusiveFullscreen) {
-        this.exclusiveFullscreen = exclusiveFullscreen;
-    }
-
-    public boolean isExclusiveFullscreen() {
-        return exclusiveFullscreen;
-    }
-
-    public void setOverhangingBorderless(boolean overhangingBorderless) {
-        this.overhangingBorderless = overhangingBorderless;
-    }
-
-    public boolean isOverhangingBorderless() {
-        return overhangingBorderless;
-    }
-
-    public void setRawInput(boolean rawInput) {
-        this.rawInput = rawInput;
-        String value = rawInput ? "0" : "1";
-        hints.put(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value);
-        if (videoInitialized) {
-            MainThread.run(() -> check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value)));
-        }
-    }
-
-    public boolean isRawInput() {
-        return rawInput;
-    }
-
-    public void setFullscreenDisplayMode(@Nullable DisplayMode mode) {
-        this.fullscreenDisplayMode = mode;
-    }
-
-    @Nullable
-    public DisplayMode getFullscreenDisplayMode() {
-        return fullscreenDisplayMode;
     }
 
     /// Sets [SDLHints] for window creation.
@@ -660,8 +608,8 @@ public class DisplaySdl {
                 width = windowedWidth;
                 height = windowedHeight;
             }
-            boolean wantBorderless = fullscreen && !exclusiveFullscreen && overhangingBorderless && Platform.CURRENT == Platform.WINDOWS;
-            if (wantBorderless) {
+            boolean exclusive = isExclusiveFullscreen();
+            if (fullscreen && isOverhangFullscreen()) {
                 enterBorderless();
                 return;
             }
@@ -669,7 +617,7 @@ public class DisplaySdl {
                 exitBorderless();
                 this.fullscreen = fullscreen;
             }
-            if (fullscreen && exclusiveFullscreen &&
+            if (fullscreen && exclusive &&
                 MainThread.call(() -> (
                     SDL_GetWindowFlags(handle) & SDL_WINDOW_FULLSCREEN) != 0
                     && SDL_GetWindowFullscreenMode(handle) == null
@@ -681,7 +629,7 @@ public class DisplaySdl {
             boolean changed = MainThread.call(() -> {
                 if (fullscreen) {
                     try (MemoryStack ms = stackPush()) {
-                        if (!SDL_SetWindowFullscreenMode(handle, exclusiveFullscreen ? exclusiveDisplayMode(ms) : null)) {
+                        if (!SDL_SetWindowFullscreenMode(handle, exclusive ? exclusiveDisplayMode(ms) : null)) {
                             Pylon.LOG.log(Level.WARNING, "Failed to set fullscreen display mode: " + SDL_GetError());
                         }
                     }
@@ -1019,5 +967,130 @@ public class DisplaySdl {
         @Override
         public void destroy() {
         }
+    }
+
+    private FullscreenMode fullscreenMode = getEnum("pylon.fullscreen", FullscreenMode.class, FullscreenMode.BORDERLESS);
+    private DisplayMode fullscreenDisplayMode;
+    private boolean rawInput = getBool("pylon.rawInput", !Boolean.getBoolean("pylon.rawInput.disable"));
+    private boolean highPixelDensity = getBool("pylon.highDpi", false);
+
+    public enum FullscreenMode {
+        /// SDL's borderless mode.
+        BORDERLESS,
+
+        /// Makes the window overhang the display by 1px, which avoids driver optimizations.
+        /// Only takes effect on Windows, other platforms use [#BORDERLESS].
+        OVERHANG,
+
+        /// Exclusive fullscreen, switching the display to [#setFullscreenDisplayMode(DisplayMode)]
+        /// or the desktop mode if none is set.
+        EXCLUSIVE
+    }
+
+    public FullscreenMode getFullscreenMode() {
+        return fullscreenMode;
+    }
+
+    /// Sets the fullscreen mode.
+    /// If the game is fullscreen, the new mode is applied immediately.
+    public void setFullscreenMode(FullscreenMode mode) {
+        if (fullscreenMode == mode) {
+            return;
+        }
+
+        fullscreenMode = mode;
+        if (isCreated() && fullscreen) {
+            setFullscreen(true);
+        }
+    }
+
+    public boolean isExclusiveFullscreen() {
+        return fullscreenMode == FullscreenMode.EXCLUSIVE;
+    }
+
+    /// @deprecated Use [#setFullscreenMode].
+    @Deprecated
+    public void setExclusiveFullscreen(boolean exclusiveFullscreen) {
+        if (exclusiveFullscreen) {
+            setFullscreenMode(FullscreenMode.EXCLUSIVE);
+        } else if (isExclusiveFullscreen()) {
+            setFullscreenMode(FullscreenMode.BORDERLESS);
+        }
+    }
+
+    public boolean isOverhangFullscreen() {
+        return fullscreenMode == FullscreenMode.OVERHANG
+            && Platform.CURRENT == Platform.WINDOWS;
+    }
+
+    public void setFullscreenDisplayMode(@Nullable DisplayMode mode) {
+        this.fullscreenDisplayMode = mode;
+    }
+
+    @Nullable
+    public DisplayMode getFullscreenDisplayMode() {
+        return fullscreenDisplayMode;
+    }
+
+    public boolean isRawInput() {
+        return rawInput;
+    }
+
+    /// Sets whether to use raw mouse input.
+    /// Takes effect immediately.
+    public void setRawInput(boolean rawInput) {
+        this.rawInput = rawInput;
+        String value = rawInput ? "0" : "1";
+        hints.put(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value);
+        if (videoInitialized) {
+            MainThread.run(() -> check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value)));
+        }
+    }
+
+    public boolean isHighPixelDensity() {
+        return highPixelDensity;
+    }
+
+    /// Sets [SDLVideo#SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN] for window creation.
+    /// @throws IllegalStateException if the display has already been created
+    public void setHighPixelDensity(boolean highPixelDensity) {
+        if (isCreated()) {
+            throw new IllegalStateException("Window properties cannot be set after Display is created");
+        }
+        this.highPixelDensity = highPixelDensity;
+    }
+
+    private static boolean getBool(String property, boolean fallback) {
+        String value = System.getProperty(property);
+        if (value == null) {
+            return fallback;
+        }
+        value = value.trim();
+        if ("true".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return false;
+        }
+        warnInvalidProp(property, value, "true, false");
+        return fallback;
+    }
+
+    private static <E extends Enum<E>> E getEnum(String property, Class<E> type, E fallback) {
+        String value = System.getProperty(property);
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return Enum.valueOf(type, value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            String expected = Arrays.toString(type.getEnumConstants()).toLowerCase(Locale.ROOT);
+            warnInvalidProp(property, value, expected.substring(1, expected.length() - 1));
+            return fallback;
+        }
+    }
+
+    private static void warnInvalidProp(String property, String value, String expected) {
+        Pylon.LOG.log(Level.WARNING, "Invalid value '" + value + "' for " + property + " (expected " + expected + ")");
     }
 }
