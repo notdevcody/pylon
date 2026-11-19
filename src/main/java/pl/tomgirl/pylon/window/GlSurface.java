@@ -8,7 +8,10 @@ import org.lwjgl.opengl.PixelFormat;
 import org.lwjgl.sdl.SDLPlatform;
 import org.lwjgl.sdl.SDLVideo;
 import org.lwjgl.system.Configuration;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
+
+import java.nio.IntBuffer;
 
 import static org.lwjgl.sdl.SDLError.SDL_GetError;
 import static org.lwjgl.sdl.SDLProperties.*;
@@ -25,6 +28,7 @@ public class GlSurface implements GpuSurface {
     private boolean glLibraryLoaded;
     private GLCapabilities capabilities;
     private boolean forceOpaqueAlpha;
+    private boolean alphaFallback;
 
     public GlSurface(PixelFormat pixelFormat) {
         this.pixelFormat = pixelFormat;
@@ -43,9 +47,15 @@ public class GlSurface implements GpuSurface {
             GL.create(SDLVideo::SDL_GL_GetProcAddress);
             glInitialized = true;
             capabilities = GL.createCapabilities(MemoryUtil::memCallocPointer);
+            if (isDeepColorWithoutAlpha()) {
+                destroy();
+                alphaFallback = true;
+                return createWindow(title, width, height, resizable);
+            }
             forceOpaqueAlpha = pixelFormat.getAlphaBits() == 0
                 && capabilities.OpenGL30
-                && "Windows".equals(SDLPlatform.SDL_GetPlatform());
+                && "Windows".equals(SDLPlatform.SDL_GetPlatform())
+                && glAttribute(SDL_GL_ALPHA_SIZE) > 0;
             return window;
         } catch (RuntimeException | Error throwable) {
             destroy();
@@ -85,9 +95,24 @@ public class GlSurface implements GpuSurface {
             check(SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY));
         }
         check(SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1));
+        check(SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, alphaFallback ? 8 : pixelFormat.getAlphaBits()));
         check(SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, pixelFormat.getDepthBits()));
         check(SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, pixelFormat.getStencilBits()));
         check(SDL_GL_SetAttribute(SDL_GL_STEREO, pixelFormat.isStereo() ? 1 : 0));
+    }
+
+    private boolean isDeepColorWithoutAlpha() {
+        if (alphaFallback || pixelFormat.getAlphaBits() != 0 || !"Windows".equals(SDLPlatform.SDL_GetPlatform())) {
+            return false;
+        }
+        return glAttribute(SDL_GL_RED_SIZE) > 8;
+    }
+
+    private static int glAttribute(int attribute) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer value = stack.mallocInt(1);
+            return SDL_GL_GetAttribute(attribute, value) ? value.get(0) : 0;
+        }
     }
 
     @Override

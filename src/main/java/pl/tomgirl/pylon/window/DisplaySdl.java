@@ -25,6 +25,7 @@ import org.lwjgl.system.MemoryUtil;
 import static org.lwjgl.sdl.SDLError.SDL_GetError;
 import static org.lwjgl.sdl.SDLEvents.*;
 import static org.lwjgl.sdl.SDLInit.*;
+import static org.lwjgl.sdl.SDLRect.SDL_PointInRect;
 import static org.lwjgl.sdl.SDLStdinc.SDL_SetMemoryFunctions;
 import static org.lwjgl.sdl.SDLStdinc.nSDL_GetMemoryFunctions;
 import static org.lwjgl.sdl.SDLVideo.*;
@@ -54,6 +55,12 @@ public class DisplaySdl {
     private int framebufferHeight = 480;
     private int windowedWidth;
     private int windowedHeight;
+    private int windowedX;
+    private int windowedY;
+    private boolean windowedMaximized;
+    private int floatingWidth;
+    private int floatingHeight;
+    private boolean restoreWindowedPosition;
 
     private boolean resizable;
     private boolean windowResized = true;
@@ -63,6 +70,11 @@ public class DisplaySdl {
     private boolean fullscreen;
     private boolean fullscreenDeferred;
     private boolean exclusiveFullscreen;
+    private boolean overhangingBorderless;
+    private boolean borderless;
+    private boolean refitBorderless;
+    private int paddingRight;
+    private int paddingTop;
     private boolean rawInput = !Boolean.getBoolean("pylon.rawInput.disable");
     private DisplayMode fullscreenDisplayMode;
     private boolean focused;
@@ -281,6 +293,14 @@ public class DisplaySdl {
         return exclusiveFullscreen;
     }
 
+    public void setOverhangingBorderless(boolean overhangingBorderless) {
+        this.overhangingBorderless = overhangingBorderless;
+    }
+
+    public boolean isOverhangingBorderless() {
+        return overhangingBorderless;
+    }
+
     public void setRawInput(boolean rawInput) {
         this.rawInput = rawInput;
         String value = rawInput ? "0" : "1";
@@ -397,6 +417,14 @@ public class DisplaySdl {
         resizePending = false;
         resizeChecked = false;
         MainThread.run(this::pollEvents);
+        if (refitBorderless && !minimized) {
+            refitBorderless = false;
+            try {
+                enterBorderless();
+            } catch (Throwable t) {
+                Pylon.LOG.log(Level.WARNING, "Failed to refit borderless window: ", t);
+            }
+        }
         updateTextInputState();
         Keyboard.poll();
         Mouse.poll();
@@ -446,8 +474,15 @@ public class DisplaySdl {
                     windowResized = true;
                     break;
                 case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
-                    fullscreen = false;
+                    fullscreen = borderless;
                     windowResized = true;
+                    break;
+                case SDL_EVENT_DISPLAY_ADDED:
+                case SDL_EVENT_DISPLAY_REMOVED:
+                case SDL_EVENT_DISPLAY_MOVED:
+                case SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED:
+                case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+                    refitBorderless = borderless;
                     break;
                 case SDL_EVENT_KEY_DOWN:
                 case SDL_EVENT_KEY_UP:
@@ -498,6 +533,7 @@ public class DisplaySdl {
         check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MAC_BACKGROUND_APP, "0"));
         check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1"));
         hints.putIfAbsent(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, rawInput ? "0" : "1");
+        hints.putIfAbsent("SDL_BORDERLESS_WINDOWED_STYLE", "0");
         hints.forEach((k, v) -> check(SDLHints.SDL_SetHint(k, v)));
 
         check(SDL_SetAppMetadata("Minecraft", null, "com.mojang.minecraft"));
@@ -523,6 +559,12 @@ public class DisplaySdl {
         this.surface = surface;
         windowedWidth = width;
         windowedHeight = height;
+        fullscreen = false;
+        borderless = false;
+        restoreWindowedPosition = false;
+        refitBorderless = false;
+        paddingRight = 0;
+        paddingTop = 0;
         try {
             handle = surface.createWindow(title, width, height, resizable);
         } catch (RuntimeException | Error throwable) {
@@ -538,8 +580,8 @@ public class DisplaySdl {
                 IntBuffer width = ms.mallocInt(1);
                 IntBuffer height = ms.mallocInt(1);
                 check(SDL_GetWindowSizeInPixels(handle, width, height));
-                framebufferWidth = Math.max(1, width.get(0));
-                framebufferHeight = Math.max(1, height.get(0));
+                framebufferWidth = Math.max(1, width.get(0) - pixelPadding(paddingRight));
+                framebufferHeight = Math.max(1, height.get(0) - pixelPadding(paddingTop));
             }
         });
         resizePending = true;
@@ -574,6 +616,8 @@ public class DisplaySdl {
         }
 
         minimized = false;
+        framebufferWidth -= pixelPadding(paddingRight);
+        framebufferHeight -= pixelPadding(paddingTop);
         if (this.framebufferWidth != framebufferWidth || this.framebufferHeight != framebufferHeight) {
             this.framebufferWidth = framebufferWidth;
             this.framebufferHeight = framebufferHeight;
@@ -597,13 +641,33 @@ public class DisplaySdl {
                     Pylon.LOG.log(Level.WARNING, "Failed to find display");
                     return;
                 }
-                if (!this.fullscreen) {
+                if (!this.fullscreen && MainThread.call(() -> (SDL_GetWindowFlags(handle) & SDL_WINDOW_FULLSCREEN) == 0)) {
                     windowedWidth = width;
                     windowedHeight = height;
+                    MainThread.run(() -> {
+                        try (MemoryStack ms = stackPush()) {
+                            IntBuffer x = ms.mallocInt(1);
+                            IntBuffer y = ms.mallocInt(1);
+                            if (SDL_GetWindowPosition(handle, x, y)) {
+                                windowedX = x.get(0);
+                                windowedY = y.get(0);
+                            }
+                        }
+                        windowedMaximized = (SDL_GetWindowFlags(handle) & SDL_WINDOW_MAXIMIZED) != 0;
+                    });
                 }
             } else {
                 width = windowedWidth;
                 height = windowedHeight;
+            }
+            boolean wantBorderless = fullscreen && !exclusiveFullscreen && overhangingBorderless && Platform.CURRENT == Platform.WINDOWS;
+            if (wantBorderless) {
+                enterBorderless();
+                return;
+            }
+            if (borderless) {
+                exitBorderless();
+                this.fullscreen = fullscreen;
             }
             if (fullscreen && exclusiveFullscreen &&
                 MainThread.call(() -> (
@@ -632,23 +696,133 @@ public class DisplaySdl {
                 awaitFullscreen(fullscreen);
             }
             if (!fullscreen) {
-                MainThread.run(() -> SDL_SetWindowSize(handle, windowedWidth, windowedHeight));
+                MainThread.run(this::restoreWindowed);
             }
-            MainThread.run(() -> {
-                try (MemoryStack ms = stackPush()) {
-                    IntBuffer width = ms.mallocInt(1);
-                    IntBuffer height = ms.mallocInt(1);
-                    check(SDL_GetWindowSize(handle, width, height));
-                    resizeCallback(handle, width.get(0), height.get(0));
-                    check(SDL_GetWindowSizeInPixels(handle, width, height));
-                    onFramebufferResize(handle, width.get(0), height.get(0));
-                }
-            });
-            windowResized = true;
-            resizePending = true;
+            updateSizeAfterModeChange();
         } catch (Throwable t) {
             Pylon.LOG.log(Level.WARNING, "Failed to set fullscreen: ", t);
         }
+    }
+
+    private void enterBorderless() throws InterruptedException {
+        if (MainThread.call(() -> (SDL_GetWindowFlags(handle) & SDL_WINDOW_FULLSCREEN) != 0
+            && SDL_SetWindowFullscreen(handle, false))) {
+            awaitFullscreen(false);
+        }
+        borderless = true;
+        MainThread.run(() -> {
+            try (MemoryStack ms = stackPush()) {
+                int display = currentDisplay();
+                SDL_Rect bounds = SDL_Rect.malloc(ms);
+                check(SDL_GetDisplayBounds(display, bounds));
+                if ((SDL_GetWindowFlags(handle) & SDL_WINDOW_MAXIMIZED) != 0) {
+                    SDL_RestoreWindow(handle);
+                    SDL_SyncWindow(handle);
+                    IntBuffer a = ms.mallocInt(1);
+                    IntBuffer b = ms.mallocInt(1);
+                    if (SDL_GetWindowPosition(handle, a, b)) {
+                        windowedX = a.get(0);
+                        windowedY = b.get(0);
+                    }
+                    if (SDL_GetWindowSize(handle, a, b)) {
+                        floatingWidth = a.get(0);
+                        floatingHeight = b.get(0);
+                    }
+                    if (SDL_GetDisplayForWindow(handle) != display) {
+                        windowedX = Math.max(bounds.x(), bounds.x() + (bounds.w() - floatingWidth) / 2);
+                        windowedY = Math.max(bounds.y(), bounds.y() + (bounds.h() - floatingHeight) / 2);
+                    }
+                }
+                SDL_SetWindowResizable(handle, false);
+                SDL_SetWindowBordered(handle, false);
+                paddingTop = overhangTop(display, bounds) ? 1 : 0;
+                paddingRight = 1 - paddingTop;
+                check(SDL_SetWindowPosition(handle, bounds.x(), bounds.y() - paddingTop));
+                check(SDL_SetWindowSize(handle, bounds.w() + paddingRight, bounds.h() + paddingTop));
+            }
+        });
+        fullscreen = true;
+        restoreWindowedPosition = true;
+        updateSizeAfterModeChange();
+    }
+
+    private void exitBorderless() {
+        borderless = false;
+        refitBorderless = false;
+        paddingRight = 0;
+        paddingTop = 0;
+        MainThread.run(() -> {
+            SDL_SetWindowBordered(handle, true);
+            SDL_SetWindowResizable(handle, resizable);
+        });
+    }
+
+    private void restoreWindowed() {
+        boolean maximize = restoreWindowedPosition && windowedMaximized;
+        SDL_SetWindowSize(handle, maximize ? floatingWidth : windowedWidth, maximize ? floatingHeight : windowedHeight);
+        if (restoreWindowedPosition) {
+            restoreWindowedPosition = false;
+            try (MemoryStack ms = stackPush()) {
+                SDL_Point point = SDL_Point.malloc(ms).set(windowedX, windowedY);
+                SDL_Rect bounds = SDL_Rect.malloc(ms);
+                if (SDL_GetDisplayBounds(SDL_GetDisplayForPoint(point), bounds) && SDL_PointInRect(point, bounds)) {
+                    SDL_SetWindowPosition(handle, windowedX, windowedY);
+                } else {
+                    SDL_SetWindowPosition(handle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+                }
+            }
+            if (maximize) {
+                SDL_MaximizeWindow(handle);
+            }
+        }
+    }
+
+    private static boolean overhangTop(int display, SDL_Rect bounds) {
+        IntBuffer displays = SDL_GetDisplays();
+        if (displays == null) {
+            return false;
+        }
+        try (MemoryStack ms = stackPush()) {
+            SDL_Rect other = SDL_Rect.malloc(ms);
+            int right = bounds.x() + bounds.w();
+            int bottom = bounds.y() + bounds.h();
+            boolean rightTaken = false;
+            boolean topTaken = false;
+            for (int i = 0; i < displays.limit(); i++) {
+                int id = displays.get(i);
+                if (id == display || !SDL_GetDisplayBounds(id, other)) {
+                    continue;
+                }
+                rightTaken |= Math.abs(other.x() - right) <= 5 && other.y() < bottom && bounds.y() < other.y() + other.h();
+                topTaken |= Math.abs(other.y() + other.h() - bounds.y()) <= 5 && other.x() < right && bounds.x() < other.x() + other.w();
+            }
+            return rightTaken && !topTaken;
+        } finally {
+            SDLStdinc.SDL_free(displays);
+        }
+    }
+
+    private int pixelPadding(int padding) {
+        return padding == 0 ? 0 : Math.max(1, Math.round(padding * SDL_GetWindowPixelDensity(handle)));
+    }
+
+    int paddingTop() {
+        return paddingTop;
+    }
+
+    private void updateSizeAfterModeChange() {
+        MainThread.run(() -> {
+            try (MemoryStack ms = stackPush()) {
+                IntBuffer width = ms.mallocInt(1);
+                IntBuffer height = ms.mallocInt(1);
+                check(SDL_GetWindowSize(handle, width, height));
+                resizeCallback(handle, width.get(0), height.get(0));
+                check(SDL_GetWindowSizeInPixels(handle, width, height));
+                onFramebufferResize(handle, width.get(0), height.get(0));
+            }
+        });
+        windowResized = true;
+        resizePending = true;
     }
 
     private void awaitFullscreen(boolean fullscreen) throws InterruptedException {
@@ -774,7 +948,7 @@ public class DisplaySdl {
 
     public void setResizable(boolean isResizable) {
         resizable = isResizable;
-        if (isCreated()) {
+        if (isCreated() && !borderless) {
             MainThread.run(() -> SDL_SetWindowResizable(handle, resizable));
         }
     }
@@ -786,7 +960,10 @@ public class DisplaySdl {
     }
 
     public void setLocation(int x, int y) {
-        if (isCreated()) {
+        if (borderless) {
+            windowedX = x;
+            windowedY = y;
+        } else if (isCreated()) {
             MainThread.run(() -> check(SDL_SetWindowPosition(handle, x, y)));
         }
     }
@@ -803,8 +980,8 @@ public class DisplaySdl {
     private void resizeCallback(long window, int width, int height) {
         if (window == handle) {
             windowResized = true;
-            this.width = width;
-            this.height = height;
+            this.width = width - paddingRight;
+            this.height = height - paddingTop;
         }
     }
 

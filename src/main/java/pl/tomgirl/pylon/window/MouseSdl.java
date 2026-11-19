@@ -240,7 +240,7 @@ public class MouseSdl {
     }
 
     private float toSdlY(double lwjglY) {
-        return (float) ((DISPLAY.getHeight() - 1 - lwjglY) / scaleY());
+        return (float) ((DISPLAY.getHeight() - 1 - lwjglY) / scaleY() + DISPLAY.paddingTop());
     }
 
     private double toLwjglX(double sdlX) {
@@ -248,7 +248,7 @@ public class MouseSdl {
     }
 
     private double toLwjglY(double sdlY) {
-        return DISPLAY.getHeight() - 1 - sdlY * scaleY();
+        return DISPLAY.getHeight() - 1 - (sdlY - DISPLAY.paddingTop()) * scaleY();
     }
 
     private double scaleX() {
