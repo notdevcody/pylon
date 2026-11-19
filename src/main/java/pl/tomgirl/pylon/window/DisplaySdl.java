@@ -70,6 +70,7 @@ public class DisplaySdl {
     private boolean fullscreen;
     private boolean fullscreenDeferred;
     private boolean exclusiveFullscreen;
+    private boolean overhangingBorderless;
     private boolean borderless;
     private boolean refitBorderless;
     private int paddingRight;
@@ -290,6 +291,14 @@ public class DisplaySdl {
 
     public boolean isExclusiveFullscreen() {
         return exclusiveFullscreen;
+    }
+
+    public void setOverhangingBorderless(boolean overhangingBorderless) {
+        this.overhangingBorderless = overhangingBorderless;
+    }
+
+    public boolean isOverhangingBorderless() {
+        return overhangingBorderless;
     }
 
     public void setRawInput(boolean rawInput) {
@@ -651,7 +660,7 @@ public class DisplaySdl {
                 width = windowedWidth;
                 height = windowedHeight;
             }
-            boolean wantBorderless = fullscreen && !exclusiveFullscreen && Platform.CURRENT == Platform.WINDOWS;
+            boolean wantBorderless = fullscreen && !exclusiveFullscreen && overhangingBorderless && Platform.CURRENT == Platform.WINDOWS;
             if (wantBorderless) {
                 enterBorderless();
                 return;
