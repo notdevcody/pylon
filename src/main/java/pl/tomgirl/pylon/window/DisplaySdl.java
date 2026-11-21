@@ -1,5 +1,6 @@
 package pl.tomgirl.pylon.window;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.Arrays;
@@ -487,7 +488,10 @@ public class DisplaySdl {
         check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1"));
         hints.putIfAbsent(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, rawInput ? "0" : "1");
         hints.putIfAbsent("SDL_BORDERLESS_WINDOWED_STYLE", "0");
-        hints.forEach((k, v) -> check(SDLHints.SDL_SetHint(k, v)));
+        if (Platform.CURRENT == Platform.UNIX && System.getenv("WAYLAND_DISPLAY") != null && new File("/dev/.cros_milestone").exists()) {
+            hints.putIfAbsent(SDLHints.SDL_HINT_VIDEO_DRIVER, "wayland,x11");
+        }
+        hints.forEach(SDLHints::SDL_SetHint);
 
         check(SDL_SetAppMetadata("Minecraft", null, "com.mojang.minecraft"));
         check(SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://minecraft.net"));
@@ -1054,7 +1058,7 @@ public class DisplaySdl {
         String value = rawInput ? "0" : "1";
         hints.put(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value);
         if (videoInitialized) {
-            MainThread.run(() -> check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value)));
+            MainThread.run(() -> SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value));
         }
     }
 
