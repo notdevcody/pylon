@@ -10,6 +10,7 @@ import java.util.logging.Level;
 
 import org.lwjgl.opengl.DisplayMode;
 import org.lwjgl.opengl.Drawable;
+import pl.tomgirl.pylon.HrtfData;
 import pl.tomgirl.pylon.Platform;
 import pl.tomgirl.pylon.Pylon;
 import org.jetbrains.annotations.NotNull;
@@ -482,6 +483,7 @@ public class DisplaySdl {
             MemoryUtil::nmemReallocChecked,
             MemoryUtil::nmemFree
         );
+        HrtfData.install();
 
         check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MAC_BACKGROUND_APP, "0"));
         check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1"));
