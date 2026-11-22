@@ -120,10 +120,10 @@ public final class MinecraftPatch extends Patch {
 
                     @Override
                     public void visitMethodInsn(int opcode, String calledOwner, String called, String calledDescriptor, boolean itf) {
-                        super.visitMethodInsn(opcode, calledOwner, called, calledDescriptor, itf);
                         if (calledOwner.equals(DISPLAY) && called.equals("create") && calledDescriptor.endsWith(")V")) {
                             super.visitMethodInsn(Opcodes.INVOKESTATIC, HOOKS, "setIcon", "()V", false);
                         }
+                        super.visitMethodInsn(opcode, calledOwner, called, calledDescriptor, itf);
                     }
 
                     @Override

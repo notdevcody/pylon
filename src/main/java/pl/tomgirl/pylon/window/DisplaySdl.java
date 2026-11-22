@@ -543,6 +543,10 @@ public class DisplaySdl {
         });
         resizePending = true;
 
+        if (cachedIcons != null) {
+            setIcon(cachedIcons);
+        }
+
         Mouse.create();
         Keyboard.create();
         MainThread.run(() -> {
@@ -557,9 +561,6 @@ public class DisplaySdl {
             focused = (SDL_GetWindowFlags(handle) & SDL_WINDOW_INPUT_FOCUS) != 0;
         });
         updateTextInputState();
-        if (cachedIcons != null) {
-            setIcon(cachedIcons);
-        }
     }
 
     private void fitHiddenWindowToDisplay() {
