@@ -529,6 +529,9 @@ public class DisplaySdl {
         }
 
         setFullscreen(fullscreenDeferred);
+        if (fullscreenDeferred && !borderless) {
+            MainThread.run(this::fitHiddenWindowToDisplay);
+        }
         MainThread.run(() -> {
             try (MemoryStack ms = stackPush()) {
                 IntBuffer width = ms.mallocInt(1);
@@ -556,6 +559,18 @@ public class DisplaySdl {
         updateTextInputState();
         if (cachedIcons != null) {
             setIcon(cachedIcons);
+        }
+    }
+
+    private void fitHiddenWindowToDisplay() {
+        try (MemoryStack ms = stackPush()) {
+            SDL_Rect bounds = SDL_Rect.malloc(ms);
+            if (SDL_GetDisplayBounds(currentDisplay(), bounds)
+                && SDL_SetWindowPosition(handle, bounds.x(), bounds.y())
+                && SDL_SetWindowSize(handle, bounds.w(), bounds.h())
+            ) {
+                restoreWindowedPosition = true;
+            }
         }
     }
 
