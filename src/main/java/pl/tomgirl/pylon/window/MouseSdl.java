@@ -6,6 +6,7 @@ import org.lwjgl.sdl.SDL_Event;
 import org.lwjgl.sdl.SDL_MouseButtonEvent;
 import org.lwjgl.sdl.SDL_MouseMotionEvent;
 import org.lwjgl.sdl.SDL_MouseWheelEvent;
+import pl.tomgirl.pylon.Platform;
 import pl.tomgirl.pylon.game.GameHooks;
 
 import static org.lwjgl.sdl.SDLEvents.*;
@@ -189,6 +190,10 @@ public class MouseSdl {
             }
             case SDL_EVENT_MOUSE_WHEEL: {
                 float yOffset = wheelEvent.y();
+                if (yOffset == 0 && Platform.CURRENT == Platform.MACOS) {
+                    // MC-121772: macOS turns Shift + wheel into horizontal scrolling, and SDL negates Cocoa's x delta
+                    yOffset = -wheelEvent.x();
+                }
                 if (yOffset == 0) {
                     break;
                 }
