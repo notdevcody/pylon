@@ -26,9 +26,11 @@ public class GlSurface implements GpuSurface {
     private long context;
     private boolean glInitialized;
     private boolean glLibraryLoaded;
+    private static GLCapabilities icdCapabilities;
     private GLCapabilities capabilities;
     private boolean forceOpaqueAlpha;
     private boolean alphaFallback;
+    private boolean legacyContext;
 
     public GlSurface(PixelFormat pixelFormat) {
         this.pixelFormat = pixelFormat;
@@ -42,11 +44,21 @@ public class GlSurface implements GpuSurface {
 
         try {
             MainThread.run(() -> createSdlWindow(title, width, height, resizable));
-            context = check(SDL_GL_CreateContext(window));
+            context = SDL_GL_CreateContext(window);
+            if (context == 0 && requestsVersion()) {
+                return retryLegacy(title, width, height, resizable);
+            }
+            check(context);
             Configuration.OPENGL_EXPLICIT_INIT.set(true);
             GL.create(SDLVideo::SDL_GL_GetProcAddress);
             glInitialized = true;
             capabilities = GL.createCapabilities(MemoryUtil::memCallocPointer);
+            if (icdCapabilities == null) {
+                icdCapabilities = capabilities;
+            }
+            if (requestsVersion() && !capabilities.OpenGL32) {
+                return retryLegacy(title, width, height, resizable);
+            }
             if (isDeepColorWithoutAlpha()) {
                 destroy();
                 alphaFallback = true;
@@ -61,6 +73,16 @@ public class GlSurface implements GpuSurface {
             destroy();
             throw throwable;
         }
+    }
+
+    private long retryLegacy(String title, int width, int height, boolean resizable) {
+        destroy();
+        legacyContext = true;
+        return createWindow(title, width, height, resizable);
+    }
+
+    private boolean requestsVersion() {
+        return !legacyContext && !"macOS".equals(SDLPlatform.SDL_GetPlatform());
     }
 
     private void createSdlWindow(String title, int width, int height, boolean resizable) {
@@ -89,10 +111,14 @@ public class GlSurface implements GpuSurface {
     }
 
     private void configureContext() {
-        if (!"macOS".equals(SDLPlatform.SDL_GetPlatform())) {
+        if (requestsVersion()) {
             check(SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3));
             check(SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2));
             check(SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY));
+        } else if (legacyContext) {
+            check(SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2));
+            check(SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1));
+            check(SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, 0));
         }
         check(SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1));
         check(SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, alphaFallback ? 8 : pixelFormat.getAlphaBits()));
@@ -160,7 +186,9 @@ public class GlSurface implements GpuSurface {
     @Override
     public void destroy() {
         if (capabilities != null) {
-            memFree(capabilities.getAddressBuffer());
+            if (capabilities != icdCapabilities) {
+                memFree(capabilities.getAddressBuffer());
+            }
             GL.setCapabilities(null);
             capabilities = null;
             forceOpaqueAlpha = false;
