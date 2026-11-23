@@ -124,6 +124,7 @@ public class DisplaySdl {
             MainThread.run(() -> check(SDLKeyboard.SDL_ClearComposition(handle)));
         }
         textInputX = -1;
+        active &= imeEnabled;
         if (active && !textInputRequested) {
             textInputRequestNanos = System.nanoTime();
         }
@@ -565,6 +566,7 @@ public class DisplaySdl {
             }
             focused = (SDL_GetWindowFlags(handle) & SDL_WINDOW_INPUT_FOCUS) != 0;
         });
+        textInputRequested &= imeEnabled;
         updateTextInputState();
     }
 
@@ -1005,6 +1007,7 @@ public class DisplaySdl {
     private DisplayMode fullscreenDisplayMode;
     private boolean rawInput = getBool("pylon.rawInput", !Boolean.getBoolean("pylon.rawInput.disable"));
     private boolean highPixelDensity = getBool("pylon.highDpi", false);
+    private boolean imeEnabled = getBool("pylon.ime", true);
 
     public enum FullscreenMode {
         /// SDL's borderless mode.
@@ -1076,6 +1079,19 @@ public class DisplaySdl {
         hints.put(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value);
         if (videoInitialized) {
             MainThread.run(() -> check(SDLHints.SDL_SetHint(SDLHints.SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, value)));
+        }
+    }
+
+    public boolean isImeEnabled() {
+        return imeEnabled;
+    }
+
+    /// Sets whether IME is enabled.
+    /// Takes effect immediately.
+    public void setImeEnabled(boolean imeEnabled) {
+        this.imeEnabled = imeEnabled;
+        if (!imeEnabled) {
+            setTextInputActive(false);
         }
     }
 
