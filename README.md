@@ -42,12 +42,12 @@ Pylon can also be put in place of LWJGL2 directly, but game patches won't be ava
 ## Settings
 Settings are set via JVM arguments (`-Dpylon.property=value`).
 
-| Property           | Values| Default   |
+| Property           | Values                                | Default      |
 |--------------------|---------------------------------------|--------------|
-| `pylon.fullscreen` | `borderless`, `overhang`, `exclusive` | `borderless`|
-| `pylon.rawInput`   | `true`, `false`                    | `true`    |
-| `pylon.highDpi`    | `true`, `false`                    | `false`   |
-| `pylon.ime`    | `true`, `false`                    | `true`   |
+| `pylon.fullscreen` | `borderless`, `overhang`, `exclusive` | `borderless` |
+| `pylon.rawInput`   | `true`, `false`                       | `true`       |
+| `pylon.highDpi`    | `true`, `false`                       | `false`      |
+| `pylon.ime`        | `true`, `false`                       | `true`       |
 
 ## Developers
 Pylon is published to the Clover Client Maven, and can be added as a dependency like so:
