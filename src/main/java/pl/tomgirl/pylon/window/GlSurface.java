@@ -10,8 +10,10 @@ import org.lwjgl.sdl.SDLVideo;
 import org.lwjgl.system.Configuration;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
+import pl.tomgirl.pylon.Pylon;
 
 import java.nio.IntBuffer;
+import java.util.logging.Level;
 
 import static org.lwjgl.sdl.SDLError.SDL_GetError;
 import static org.lwjgl.sdl.SDLProperties.*;
@@ -58,6 +60,11 @@ public class GlSurface implements GpuSurface {
             }
             if (requestsVersion() && !capabilities.OpenGL32) {
                 return retryLegacy(title, width, height, resizable);
+            }
+            if (!capabilities.OpenGL13 && !capabilities.GL_ARB_multitexture) {
+                Pylon.LOG.log(Level.SEVERE, "OpenGL 1.3 or GL_ARB_multitexture is missing, the driver only provides OpenGL "
+                    + GL11.glGetString(GL11.GL_VERSION) + " (" + GL11.glGetString(GL11.GL_RENDERER)
+                    + "). Game versions that use multitexturing will crash. Install the graphics driver for your GPU.");
             }
             if (isDeepColorWithoutAlpha()) {
                 destroy();
