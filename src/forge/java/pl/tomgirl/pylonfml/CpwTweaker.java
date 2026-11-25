@@ -2,6 +2,7 @@ package pl.tomgirl.pylonfml;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -46,11 +47,15 @@ public final class CpwTweaker implements IFMLCallHook {
                 .invoke(null)
         ).add(new File(RuntimeClassLoader.location().toURI()).getName());
 
-        final List<IClassTransformer> transformers = (List<IClassTransformer>) type.getMethod("getTransformers").invoke(loader);
+        Method transform = transformerMethod();
+        boolean includesTransformedName = transform.getParameterCount() == 3;
+        List<?> transformers = (List<?>) type.getMethod("getTransformers").invoke(loader);
         runtime.setLwjglTransformer((name, bytes) -> {
-            for (IClassTransformer transformer : transformers.toArray(new IClassTransformer[0])) {
+            Object[] arguments = includesTransformedName ? new Object[] {name, name, bytes} : new Object[] {name, bytes};
+            for (Object transformer : transformers.toArray()) {
                 try {
-                    byte[] result = transformer.transform(name, name, bytes);
+                    arguments[arguments.length - 1] = bytes;
+                    byte[] result = (byte[]) transform.invoke(transformer, arguments);
                     if (result != null) bytes = result;
                 } catch (Throwable ignored) {
                 }
@@ -64,6 +69,14 @@ public final class CpwTweaker implements IFMLCallHook {
             display.getMethod("initializeVideo").invoke(display.getMethod("instance").invoke(null));
         }
         return null;
+    }
+
+    private static Method transformerMethod() throws NoSuchMethodException {
+        try {
+            return IClassTransformer.class.getMethod("transform", String.class, String.class, byte[].class);
+        } catch (NoSuchMethodException e) {
+            return IClassTransformer.class.getMethod("transform", String.class, byte[].class);
+        }
     }
 
     private static Field field(Class<?> type, String name) throws NoSuchFieldException {

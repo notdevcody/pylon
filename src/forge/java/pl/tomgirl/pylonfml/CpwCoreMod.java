@@ -1,5 +1,6 @@
 package pl.tomgirl.pylonfml;
 
+import java.lang.reflect.Method;
 import java.util.Map;
 import cpw.mods.fml.relauncher.IFMLLoadingPlugin;
 
@@ -27,5 +28,16 @@ public final class CpwCoreMod implements IFMLLoadingPlugin {
     }
 
     @Override
-    public void injectData(Map<String, Object> data) {}
+    public void injectData(Map<String, Object> data) {
+        ClassLoader loader = getClass().getClassLoader();
+        try {
+            Method exclude = loader.getClass().getDeclaredMethod("addTransformerExclusion", String.class);
+            exclude.setAccessible(true);
+            for (String prefix : getClass().getAnnotation(IFMLLoadingPlugin.TransformerExclusions.class).value()) {
+                exclude.invoke(loader, prefix);
+            }
+        } catch (ReflectiveOperationException e) {
+            e.printStackTrace();
+        }
+    }
 }
