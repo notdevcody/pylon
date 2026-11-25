@@ -100,6 +100,7 @@ class PylonBuildPlugin : Plugin<Project> {
                 "Premain-Class" to "pl.tomgirl.pylon.Agent",
                 "Implementation-Version" to project.version.toString(),
                 "TweakClass" to "pl.tomgirl.pylon.forge.PylonTweaker",
+                "FMLCorePlugin" to "pl.tomgirl.pylonfml.CpwCoreMod",
             )
         }
 
@@ -124,6 +125,7 @@ class PylonBuildPlugin : Plugin<Project> {
                 "Premain-Class" to "pl.tomgirl.pylon.Agent",
                 "Implementation-Version" to project.version.toString(),
                 "TweakClass" to "pl.tomgirl.pylon.forge.PylonTweaker",
+                "FMLCorePlugin" to "pl.tomgirl.pylonfml.CpwCoreMod",
                 "Multi-Release" to "true",
             )
         }

@@ -1,13 +1,12 @@
 package pl.tomgirl.pylon.forge;
 
 import java.io.File;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.lang.reflect.Field;
 import java.util.List;
 
 import net.minecraft.launchwrapper.ITweaker;
 import net.minecraft.launchwrapper.LaunchClassLoader;
+import pl.tomgirl.pylon.RuntimeClassLoader;
 
 @SuppressWarnings("unused")
 public final class PylonTweaker implements ITweaker {
@@ -25,8 +24,7 @@ public final class PylonTweaker implements ITweaker {
             Field parent = classLoader.getClass().getDeclaredField("parent");
             parent.setAccessible(true);
             ClassLoader launcherParent = (ClassLoader) parent.get(classLoader);
-            URL runtime = PylonTweaker.class.getProtectionDomain().getCodeSource().getLocation();
-            RuntimeClassLoader runtimeLoader = new RuntimeClassLoader(runtime, launcherParent);
+            RuntimeClassLoader runtimeLoader = new RuntimeClassLoader(RuntimeClassLoader.location(), launcherParent);
             parent.set(classLoader, runtimeLoader);
             if (System.getProperty("os.name", "").startsWith("Mac")) {
                 Class<?> display = runtimeLoader.loadClass("pl.tomgirl.pylon.window.DisplaySdl");
@@ -40,34 +38,6 @@ public final class PylonTweaker implements ITweaker {
         classLoader.addClassLoaderExclusion("pl.tomgirl.pylon.");
         classLoader.addTransformerExclusion("pl.tomgirl.pylonfml.");
         classLoader.registerTransformer(PylonTransformer.class.getName());
-    }
-
-    private static class RuntimeClassLoader extends URLClassLoader {
-        RuntimeClassLoader(URL runtime, ClassLoader parent) {
-            super(new URL[]{runtime}, parent);
-        }
-
-        @Override
-        protected synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-            if (name.startsWith("org.lwjgl.") || name.startsWith("pl.tomgirl.pylon.")) {
-                Class<?> loaded = findLoadedClass(name);
-                if (loaded == null) {
-                    try {
-                        loaded = findClass(name);
-                    } catch (ClassNotFoundException ignored) {
-                        loaded = super.loadClass(name, false);
-                    }
-                }
-
-                if (resolve) {
-                    resolveClass(loaded);
-                }
-
-                return loaded;
-            }
-
-            return super.loadClass(name, resolve);
-        }
     }
 
     @Override

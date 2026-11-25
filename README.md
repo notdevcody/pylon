@@ -14,8 +14,8 @@ Pylon allows legacy Minecraft versions to run with LWJGL 3. It replaces the outd
 ### Forge
 Depending on the game version:
 - 1.3 or older: Follow [Other](#Other).
-- 1.4: Put the mod jar into the `.minecraft/coremods` folder.
-- 1.5 or newer: Put the mod jar into the `.minecraft/mods` folder.
+- 1.4 - 1.5: Put the mod jar into the `.minecraft/coremods` folder.
+- 1.6 or newer: Put the mod jar into the `.minecraft/mods` folder.
 
 ### Fabric
 Put the mod jar into the `.minecraft/mods` folder.
