@@ -371,6 +371,7 @@ public class DisplaySdl {
         windowResized = resizePending || (windowResized && !resizeChecked);
         resizePending = false;
         resizeChecked = false;
+        awaitAppKitTracking();
         MainThread.run(this::pollEvents);
         if (refitBorderless && !minimized) {
             refitBorderless = false;
@@ -385,10 +386,30 @@ public class DisplaySdl {
         Mouse.poll();
     }
 
+    private static void awaitAppKitTracking() {
+        if (Platform.CURRENT != Platform.MACOS || !MainThread.DISPATCH) {
+            return;
+        }
+
+        while (MainThread.call(AppKitEvents::isTracking)) {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
     private void pollEvents() {
         if (Platform.CURRENT == Platform.MACOS) {
+            if (MainThread.DISPATCH && AppKitEvents.isTracking()) {
+                return;
+            }
+
             AppKitEvents.repost();
         }
+
         while (SDL_PollEvent(event)) {
             switch (event.type()) {
                 case SDL_EVENT_QUIT:
