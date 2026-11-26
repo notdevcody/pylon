@@ -108,9 +108,13 @@ public final class Agent {
     @SuppressWarnings("unchecked")
     private static void prioritizeAgentJar(Instrumentation instrumentation) throws Exception {
         ClassLoader system = ClassLoader.getSystemClassLoader();
-        Class<?> owner = system instanceof URLClassLoader
-            ? URLClassLoader.class
-            : Class.forName("jdk.internal.loader.BuiltinClassLoader");
+        Class<?> owner = URLClassLoader.class;
+        try {
+            Class<?> builtin = Class.forName("jdk.internal.loader.BuiltinClassLoader");
+            if (builtin.isAssignableFrom(system.getClass())) {
+                owner = builtin;
+            }
+        } catch (ClassNotFoundException ignored) {}
 
         Object ucp = field(instrumentation, owner, "ucp").get(system);
         List<Object> loaders = (List<Object>) field(instrumentation, ucp.getClass(), "loaders").get(ucp);
