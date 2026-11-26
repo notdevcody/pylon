@@ -14,8 +14,10 @@ import pl.tomgirl.pylon.game.patch.Patch;
 public final class MinecraftPatch extends Patch {
     private static final String DISPLAY = "org/lwjgl/opengl/Display";
     private final List<Method> screenCandidates = new ArrayList<>();
+    private final List<String> screenFields = new ArrayList<>();
     private String owner;
     private Method openScreen;
+    private String screenField;
     private Method resizeGuard;
     private int resizeGuardIndex;
     private boolean displayCreate;
@@ -69,9 +71,10 @@ public final class MinecraftPatch extends Patch {
 
             @Override
             public void visitEnd() {
-                if (writes.stream().anyMatch(reads::contains)) {
+                writes.stream().filter(reads::contains).findFirst().ifPresent(field -> {
                     screenCandidates.add(new Method(name, descriptor));
-                }
+                    screenFields.add(field);
+                });
                 super.visitEnd();
             }
         };
@@ -85,6 +88,7 @@ public final class MinecraftPatch extends Patch {
 
         if (screenCandidates.size() == 1) {
             openScreen = screenCandidates.get(0);
+            screenField = screenFields.get(0);
         }
 
         return true;
@@ -115,6 +119,12 @@ public final class MinecraftPatch extends Patch {
                             super.visitInsn(Opcodes.ICONST_0);
                             return;
                         }
+                        if (patchesScreen && opcode == Opcodes.PUTFIELD && fieldOwner.equals(owner) && field.equals(screenField)) {
+                            super.visitInsn(Opcodes.DUP_X1);
+                            super.visitFieldInsn(opcode, fieldOwner, field, fieldDescriptor);
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, HOOKS, "screenOpened", "(Ljava/lang/Object;)V", false);
+                            return;
+                        }
                         super.visitFieldInsn(opcode, fieldOwner, field, fieldDescriptor);
                     }
 
@@ -127,17 +137,8 @@ public final class MinecraftPatch extends Patch {
                     }
 
                     @Override
-                    public void visitInsn(int opcode) {
-                        if (patchesScreen && opcode == Opcodes.RETURN) {
-                            super.visitVarInsn(Opcodes.ALOAD, 1);
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, HOOKS, "screenOpened", "(Ljava/lang/Object;)V", false);
-                        }
-                        super.visitInsn(opcode);
-                    }
-
-                    @Override
                     public void visitMaxs(int maxStack, int maxLocals) {
-                        super.visitMaxs(Math.max(maxStack, 1), maxLocals);
+                        super.visitMaxs(Math.max(maxStack, 1) + (patchesScreen ? 1 : 0), maxLocals);
                     }
                 };
             }
