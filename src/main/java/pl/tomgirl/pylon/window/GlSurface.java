@@ -58,7 +58,7 @@ public class GlSurface implements GpuSurface {
             if (icdCapabilities == null) {
                 icdCapabilities = capabilities;
             }
-            if (requestsVersion() && !capabilities.OpenGL32) {
+            if (requestsVersion() && (!capabilities.OpenGL32 || capabilities.glClientActiveTexture == MemoryUtil.NULL)) {
                 return retryLegacy(title, width, height, resizable);
             }
             if (!capabilities.OpenGL13 && !capabilities.GL_ARB_multitexture) {
