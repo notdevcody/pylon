@@ -585,6 +585,14 @@ public class DisplaySdl {
             if (SDL_IsMainThread()) {
                 SDL_PumpEvents();
             }
+            if ((SDL_GetWindowFlags(handle) & SDL_WINDOW_INPUT_FOCUS) == 0) {
+                SDLHints.SDL_SetHint(SDLHints.SDL_HINT_FORCE_RAISEWINDOW, "1");
+                SDL_RaiseWindow(handle);
+                SDLHints.SDL_ResetHint(SDLHints.SDL_HINT_FORCE_RAISEWINDOW);
+                if (SDL_IsMainThread()) {
+                    SDL_PumpEvents();
+                }
+            }
             focused = (SDL_GetWindowFlags(handle) & SDL_WINDOW_INPUT_FOCUS) != 0;
         });
         textInputRequested &= imeEnabled;
